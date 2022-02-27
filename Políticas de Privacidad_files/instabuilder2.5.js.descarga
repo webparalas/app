@@ -1,0 +1,1057 @@
+(function($) {
+	var currentPopupId = null,
+		post_id = ib2post['post_id'],
+		permalink = ib2post['permalink'],
+		videos = {},
+		origPadTop = 0,
+		origPadBottom = 0,
+		popIntent = 0,
+		sliderIntent = 0,
+		noticeIntent = 0,
+		bgShorter = false;
+
+	// EVENTS
+	// load resize
+	$(window).on("load resize", function(e){
+		// resize backgrounds
+		resizeBackgrounds();
+
+		// centering popup
+		if ( currentPopupId && $('#' + currentPopupId).length ) {
+			ib2_popup_center($('#' + currentPopupId));
+		}
+
+		if ( ib2opts.attribution == "1" || ib2opts.attribution == 1 ) {
+			if ( !$('.ib2-attrib').length ) {
+				$('body').append('<a href="' + ib2opts.footerurl + '" target="_blank" class="ib2-attrib"><img src="' + ib2poweredby.img + '" class="img-responsive" /></a>');
+			}
+		}
+	});
+
+	// remove grammarly
+	$('grammarly-btn').remove();
+
+	// fix height if necessary
+	if ( $(window).height() > $('.main-wrapper').outerHeight() ) {
+		$('.main-wrapper').css('min-height', $(window).height() + "px");
+		bgShorter = true;
+	}
+
+	// fix page background
+	if ( !$('#screen-container-box-img').length && typeof ib2data !== "undefined" && ib2data.hasOwnProperty('background') ) {
+		// check if target has background
+		var bgImg = ib2data['background']['backgroundImage'];
+		if ( bgImg !== 'none' ) {
+			var bgAttach = ib2data['background']['backgroundAttachment'],
+				bgPos = bgAttach == 'scroll' ? ib2data['background']['backgroundPosition'] : 'center top',
+				bgTile = ib2data['background']['backgroundRepeat'],
+				bgSize = ib2data['background']['backgroundSize'] || 'auto';
+
+			// target must not have background image
+			$('.main-wrapper').css('backgroundImage', 'none');
+
+			// create new background image placeholder
+			$('.main-wrapper').prepend('<div id="screen-container-box-img" class="is-background"></div>');
+
+			bgImg = bgImg.replace(new RegExp('{%IB2_PLUGIN_DIR%}', 'g'), ib2url);
+			var css = {
+				backgroundColor: 'transparent',
+				backgroundImage: 'url("' + bgImg + '")',
+				backgroundRepeat: bgTile,
+				backgroundPos: bgPos,
+				backgroundSize: bgSize,
+				backgroundAttachment: bgAttach,
+				position: 'absolute',
+				top: 0,
+				left: 0,
+				maxWidth: '100%',
+				width: '100%',
+				height: $('.main-wrapper').css('height')
+			};
+
+			// apply background image
+			$('#screen-container-box-img').css(css);
+		}
+	}
+
+	// Detect exit intent
+	addEvent(document, "mouseout", function(e) {
+		e = e || window.event;
+
+		if ( e.target.tagName.toLowerCase() == "input" ) {
+			return;
+		}
+
+		var viewportWidth = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+		if ( (e.clientX >= (viewportWidth - 50)) || e.clientY >= 50 ) {
+			return;
+		}
+
+		var from = e.relatedTarget || e.toElement;
+		if ( !from ) {
+			// trigger exit intent
+			$('body').trigger('exit-intent');
+			popIntent++,
+			sliderIntent++,
+			noticeIntent++;
+		}
+	});
+
+	// slider & bar close
+	$('body').on('click', '.slider-bar-close', function(e) {
+		var $this = $(this);
+		if ( $this.closest('.ib2-notification-bar').length ) {
+			$('.ib2-notification-bar').hide();
+			$('body').css('paddingTop', origPadTop + 'px');
+		} else {
+			$('#ib2-bottom-slider-main').hide();
+			$('body').css('paddingBottom', origPadBottom + 'px');
+		}
+		e.preventDefault();
+	});
+
+	// LINK AND SCROLL TO
+	$('body').on('click', 'a', function(e){
+		var $a = $(this),
+			href = $a.attr('href');
+
+		if ( href && href !== '' && href.substr(0, 1) === "#" && !$a.hasClass('open-popup') ) {
+			var anchor = href.replace('#', '');
+			if ( $("[data-anchor='" + anchor + "']").length ) {
+				var anchorId = $("[data-anchor='" + anchor + "']").attr('id');
+				$('html, body').animate({
+        			scrollTop: $('#' + anchorId).offset().top
+    			}, 500);
+			} else if ( $('#' + anchor).length && !$("[data-anchor='" + anchor + "']").length ) {
+				$('html, body').animate({
+        			scrollTop: $('#' + anchor).offset().top
+    			}, 500);
+			}
+        	return false;
+    	}
+	});
+
+	// MENU
+	$('.menu-show').removeClass('menu-show');
+	$('body').on('click', '.ib2-navbar-toggle', function(e){
+		var $this = $(this);
+
+		if ( $this.parent().find('nav').hasClass('menu-show') ) {
+			$this.parent().find('nav').removeClass('menu-show');
+		} else {
+			$this.parent().find('nav').addClass('menu-show');
+		}
+		e.preventDefault();
+	});
+
+	// CAROUSEL
+	$('.carousel').each(function(){
+		var el = $(this),
+			id = el.attr('id');
+
+		el.find('.carousel-control').attr('href', '#' + id);
+		el.carousel();
+	});
+
+	// VIDEOS
+	$('.ib2-video-container').each(function(){
+		var $vid = $(this);
+
+		if ( $vid.find('iframe').length ) {
+			var pointerEvents = $vid.find('iframe').css('pointerEvents');
+			if ( pointerEvents == 'none' ) {
+				$vid.find('iframe').css('pointer-events', 'auto');
+			}
+
+			if ( $vid.closest('.ib2-popup').length && !$vid.closest('.ib2-pop-content').is(":visible") ) {
+				videos[$vid.attr('id')] = $.trim($vid.find('.el-content').html());
+				$vid.find('.el-content').html('');
+			}
+		}
+	});
+
+	// COLLAPSE
+	$('body').on('click', '.ib2-collapse-head', function(e){
+		var $this = $(this),
+			panel = $this.parent().find('.ib2-collapse-panel');
+
+		if ( $this.hasClass('active') ) {
+			panel.css('max-height', '0px');
+			$this.removeClass('active');
+		} else {
+			var panelHeight = panel.find('.ib2-collapse-content').outerHeight();
+			panel.css('max-height', panelHeight + 'px');
+			$this.addClass('active');
+
+			setTimeout(function(){
+				panel.css('max-height', 'none');
+			}, 50);
+		}
+		e.preventDefault();
+	});
+
+	// FORMS
+	$('.ib2-form-el').each(function(){
+		var $form = $(this),
+			formId = $form.attr('id'),
+			isAPIIntegrated = ( $form.find('input[name="_webinar_action"]').length ) ? true : false,
+			actionUrl = $form.find('input[name="action_url"]').length ? $form.find('input[name="action_url"]').val() : false,
+			method = $form.find('input[name="_method"]').length ? $form.find('input[name="_method"]').val() : 'post';
+
+		$form.find('.form-fields').append('<input type="hidden" name="_orig_action_url" value="">');
+		$form.find('.form-fields').append('<input type="hidden" name="_orig_method" value="">');
+		if ( actionUrl ) {
+			$form.find('input[name="_orig_action_url"]').val(actionUrl);
+		}
+		if ( method ) {
+			$form.find('input[name="_orig_method"]').val(method);
+		}
+		if ( isAPIIntegrated ) {
+			var posturl = ( permalink.indexOf('?') > -1 ) ? permalink + '&var=value' : permalink + '?var=value';
+			$form.find('form').attr('action', posturl);
+			$form.find('form').attr('method', 'post');
+			$form.find('form').attr('action', $form.find('input[name="_webinar_action"]').val());
+		} else {
+			if ( actionUrl ) {
+				$form.find('form').attr('action', actionUrl);
+				$form.find('form').attr('method', method);
+				$form.find('input[name="action_url"]').remove();
+				$form.find('input[name="_method"]').remove();
+			}
+		}
+	});
+
+	$('.eu-checkbox-field').each(function(){
+		$(this).attr('required', true);
+	});
+
+	// SHARE URL Links
+	$('.ib2-share-btn').each(function(){
+		var $share = $(this),
+			shareUrl = '',
+			title = ib2post['post_title'],
+			elID = $share.closest('.ib2-share-el').attr('id'),
+			shareurl = permalink;
+
+		if ( typeof ib2share !== "undefined" && ib2share.hasOwnProperty(elID) ) {
+			if ( ib2share[elID].hasOwnProperty('socialurl') && ib2share[elID]['socialurl'].hasOwnProperty('custom-url') ) {
+				var customURL = ib2share[elID]['socialurl']['custom-url'];
+				if ( customURL && customURL !== '' ) {
+					shareurl = customURL;
+				}
+			}
+		}
+		if ( $share.hasClass('ib2-twitter-share') ) {
+			shareUrl = 'https://twitter.com/intent/tweet?text={title}&url={permalink}';
+		} else if ( $share.hasClass('ib2-linkedin-share') ) {
+			shareUrl = 'https://www.linkedin.com/shareArticle?url={permalink}&title={title}&mini=true';
+		} else if ( $share.hasClass('ib2-google-share') ) {
+			shareUrl = 'https://plus.google.com/share?url={permalink}';
+		} else {
+			shareUrl = 'https://www.facebook.com/sharer/sharer.php?u={permalink}&t={title}';
+		}
+
+		title = title.split(' ').join('+');
+		shareUrl = shareUrl.replace(new RegExp('{title}', 'gi'), title);
+		shareUrl = shareUrl.replace(new RegExp('{permalink}', 'gi'), encodeURIComponent(shareurl));
+
+		$share.find('a').attr('href', shareUrl);
+	});
+
+	$('body').on('click', '.ib2-share-btn > a', function(e){
+		$(this).blur();
+		window.open(
+			$(this).attr('href'), 
+			'targetWindow', 
+			"toolbar=no,location=no,status=no,menubar=no,scrollbars=no,resizable=yes,width=700,height=300,top=200,left=" + ($(window).innerWidth() - 700)/2 
+		);
+		e.preventDefault();
+	});
+
+	// BODY VIDEO BACKGROUND
+	if ( typeof ib2ytbg === "string" && ib2ytbg !== '' ) {
+		$('body').append('<div class="ib2-ytbg"></div>');
+		var ytURL = $.trim(ib2ytbg);
+		var matches = ytURL.match(/(?:https?:\/{2})?(?:w{3}\.)?youtu(?:be)?\.(?:com|be)(?:\/watch\?v=|\/)([^\s&]+)/);
+		if ( matches ) {
+			$('body').append('<div id="ib2-ytbg"></div>');
+			$('#ib2-ytbg').YTPlayer({ 
+				videoURL: matches[1], 
+				containment: 'body', 
+				mute: true, 
+				showControls: false, 
+				autoPlay: true, 
+				loop: true, 
+				startAt: 2,
+				quality: 'large',
+				optimizeDisplay: true
+			});
+		}
+	}
+
+	// TABS
+	$('body').on('click', '.ib2-nav-tabs > li > a', function(e){
+		var $this = $(this),
+			activeId = $this.attr('href'),
+			oldLink = $this.closest('.ib2-nav-tabs').find('.ib2-tabs-active'),
+			oldContent = $(activeId).parent().find('.ib2-tabs-active');
+
+		// switch link
+		oldLink.removeClass('ib2-tabs-active');
+		$this.parent().addClass('ib2-tabs-active');
+
+		// switch content
+		oldContent.removeClass('ib2-tabs-active');
+		$(activeId).addClass('ib2-tabs-active');
+
+		// resize all backgrounds
+		//gui.resizeBackgrounds();
+
+		e.preventDefault();
+		e.stopPropagation();
+	});
+
+	// DATES
+	if ( $('.ib2-date-el').length ) {
+		$('.ib2-date-el').each(function(){
+			var el = $(this),
+				offset = el.attr('data-tz'),
+				format = el.attr('data-format');
+
+			el.html(moment().tz(offset).format(format));
+		});
+	}
+
+	// 3 STEPS OPTIN
+	$('.ib2-section-slide').css('height', 'auto');
+	$('a[href*="#go-to-step-2"]').click(function(e){
+		var hw = $('.ib2-section-slide-1').outerWidth();
+		$('.ib2-section-slide-1').hide();
+		$('.ib2-section-slide-2').fadeIn();
+		e.preventDefault();	
+	});
+	
+	$('a[href*="#go-to-step-3"]').click(function(e){
+		var hw = $('.ib2-section-slide-2').outerWidth();
+		$('.ib2-section-slide-2').hide();
+		$('.ib2-section-slide-3').fadeIn();
+		e.preventDefault();
+	});
+
+	// POPUPS
+	$('.open-popup').each(function(){
+		$(this).click(function(e){
+			var $this = $(this),
+				popupId = $this.attr('data-popup');
+
+			if ( typeof popupId !== "string" || popupId === null || popupId === '' || currentPopupId !== null ) {
+				return true;
+			}
+
+			revealPopup(popupId);
+			e.preventDefault();
+		});
+	});
+
+	$('.ib2-close-pop').each(function(){
+		$(this).click(function(e){
+			if ( currentPopupId ) {
+				close_popup($('#' + currentPopupId));
+			}
+			e.preventDefault();
+		});
+	});
+
+	$('body').on('click', '.ib2-popup-bg', function(e){
+		if ( currentPopupId ) {
+			close_popup($('#' + currentPopupId));
+		}
+		e.preventDefault();
+	});
+
+	addEvent(document, 'DOMContentLoaded', function(){
+		// GLOBAL POPUP
+		if ( ib2data.hasOwnProperty('popup') ) {
+			if ( ib2data.popup.time != 'unfocus' ) {
+				var displayPopup = shouldDisplay('popup', ib2data.popup, post_id);
+				if ( displayPopup ) {
+					var popupId = ib2data.popup.popid;
+					revealPopup(popupId);
+				}
+			} else {
+				// EXIT INTENT
+				$('body').on('exit-intent', function(e){
+					if ( ib2data.popup.active != 'yes' || popIntent >= 1 ) {
+						return;
+					}
+					var popupId = ib2data.popup.popid;
+					revealPopup(popupId);
+				});
+			}
+		}
+
+		// SLIDER
+		if ( ib2data.hasOwnProperty('slider') ) {
+			if ( ib2data.slider.time != 'unfocus' ) {
+				var displaySlider = shouldDisplay('slider', ib2data.slider, post_id);
+				if ( displaySlider ) {
+					revealSlider();
+				}
+			} else {
+				// EXIT INTENT
+				$('body').on('exit-intent', function(e){
+					if ( ib2data.slider.active != 'yes' || sliderIntent >= 1 ) {
+						return;
+					}
+					revealSlider();
+				});
+			}
+		}
+
+		// INFOBAR
+		if ( ib2data.hasOwnProperty('infobar') ) {
+			if ( ib2data.infobar.time != 'unfocus' ) {
+				var displayBar = shouldDisplay('infobar', ib2data.infobar, post_id);
+				if ( displayBar ) {
+					revealBar();
+				}
+			} else {
+				// EXIT INTENT
+				$('body').on('exit-intent', function(e){
+					if ( ib2data.infobar.active != 'yes' || noticeIntent >= 1 ) {
+						return;
+					}
+					revealBar();
+				});
+			}
+		}
+ 
+		// COMMENTS
+		if ( typeof ib2comments !== "undefined" ) {
+			for ( var com in ib2comments ) {
+				if ( $('#' + com).length && ib2comments[com].hasOwnProperty('comment') ) {
+					var provider = ib2comments[com]['comment']['comment'] || 'facebook';
+
+					if ( provider == 'facebook' ) {
+						$('#' + com).find('> .el-content').html('<div class="fb-comments" data-href="' + permalink + '" data-numposts="5" data-width="100%"></div>');
+					} else if ( provider == 'disqus' && ib2opts.hasOwnProperty('disqus') && ib2opts['disqus'] != '' ) {
+						$('#ib2-disqus-js').remove();
+						$('#' + com).find('> .el-content').html('<div id="disqus_thread"></div>');
+						// call disqus
+						var s = document.createElement('script');
+						s.src = 'https://' + ib2opts['disqus'] + '.disqus.com/embed.js';
+						s.id = 'ib2-disqus-js';
+						s.setAttribute('data-timestamp', +new Date());
+						(document.head || document.body).appendChild(s);
+					}
+				}
+			}
+		}
+	});
+
+	// QUESTIONS
+	$('.ib2-questions-el').each(function(){
+		var $this = $(this);
+		$this.find('.ib2-unused-question').remove();
+		$this.find('.ib2-quiz-page').each(function(i){
+			var $quiz = $(this),
+				qnum = i+1;
+
+			$quiz.find('.form-group').each(function(j){
+				var $a = $(this),
+					txt = $.trim($a.find('.quiz-text-edit').text()),
+					anum = j+1;
+
+				$a.html('<input type="radio" id="q' + qnum + 'a' + anum + '" class="answers-radio" name="q' + qnum + '" value="' + anum + '" data-label="' + txt + '" />');
+			});
+		});
+	});
+
+	$('.answers-radio').each(function(){
+		$(this).prettyCheckable();
+	});
+
+	$('body').on('change', '.answers-radio', function(e){
+		var $this = $(this);
+		if ( $this.is(":checked") ) {
+			setTimeout(function(){
+				$this.closest('.ib2-quiz-page').hide();
+				$this.closest('.ib2-quiz-page').next('.ib2-quiz-page').fadeIn();
+			}, 500);
+			
+		}
+	});
+
+	// COUNTDOWNS
+    if ( typeof ib2countdowns !== "undefined" ) {
+    	$('.ib2-countdown-el').each(function(){
+    		var $countdown = $(this),
+    			cid = $countdown.attr('id');
+
+    		if ( typeof ib2countdowns[cid] !== "undefined" ) {
+    			var style = ib2countdowns[cid]['countdownstyle']['style'],
+    				textSetting = ib2countdowns[cid]['countdowntexts'],
+    				format = countdownHtml(cid, style),
+    				updateType = 'normal',
+    				hidden;
+
+    			if ( $('#' + cid + '-content').length ) {
+    				var hiddenStyle = $('#' + cid + '-content').attr('style');
+    				hidden = '<div id="' + cid + '-content" style="' + hiddenStyle + '">';
+    				hidden += $('#' + cid + '-content').html();
+    				hidden += '</div>';
+    			}
+    			
+    			if ( style == 'circular' ) {
+    				updateType = 'circular';
+					$('#' + cid).html(format);
+
+					// set stroke
+					var radius = 54,
+						circumference = 2 * Math.PI * radius;
+
+					$('#' + cid).find('.clock-anim').css('stroke-dasharray', circumference);
+					$('#' + cid).find('.clock-anim').css('stroke-dashoffset', circumference);
+					$('#' + cid).addClass('ib2-circular-countdown');
+					$('#' + cid).removeClass('ib2-countdown-shadow');
+				} else {
+					$('#' + cid).html(format);
+
+					$('#' + cid).removeClass('ib2-circular-countdown');
+					$('#' + cid).removeClass('ib2-countdown-shadow');
+					if ( style == 'text' ) {
+						$('#' + cid).removeClass('ib2-countdown-style');
+						if ( !$('#' + cid).find('.c-before-text').length ) {
+							$('#' + cid).prepend('<span class="c-before-text"></span> ');
+						}
+
+						if ( typeof textSetting['c-before-text'] !== "undefined" && textSetting['c-before-text'] !== null && textSetting['c-before-text'] != '' ) {
+							$('#' + cid).find('.c-before-text').text(textSetting['c-before-text']);
+						}
+
+						if ( !$('#' + cid).find('.c-after-text').length ) {
+							$('#' + cid).append('<span class="c-after-text"></span> ');
+						}
+
+						if ( typeof textSetting['c-after-text'] !== "undefined" && textSetting['c-after-text'] !== null && textSetting['c-after-text'] != '' ) {
+							$('#' + cid).find('.c-after-text').text(textSetting['c-after-text']);
+						}
+					} else if ( style == 'glossy-box' ) {
+						$('#' + cid).addClass('ib2-countdown-shadow');
+					}
+				}
+
+				var setting = ib2countdowns[cid]['countdown'];
+				if ( setting.mode == 'date' ) {
+					var offset = setting['tz'],
+						hour = ("0" + setting['time-hour']).slice(-2),
+						min = ("0" + setting['time-min']).slice(-2),
+						newdate = setting['exact-date'] + ' ' + hour + ':' + min,
+						origTime = moment.tz(newdate, offset),
+						utc = origTime.clone().tz("UTC"),
+						localTime = moment.utc(utc).toDate();
+
+					finalDate = moment(localTime).format("YYYY/MM/DD HH:mm:ss");
+				} else {
+					var newDate = new Date().valueOf(),
+						day = parseInt(setting['time-day']) * 24 * 60 * 60 * 1000,
+						hour = parseInt(setting['time-hour']) * 60 * 60 * 1000,
+						min = parseInt(setting['time-min']) * 60 * 1000;
+
+					if ( setting.mode == 'cookie' ) {
+						var countdownCookie = Cookies.get('ib2c-' + post_id);
+						if ( countdownCookie ) {
+							newDate = parseInt(countdownCookie);
+						} else {
+							var expire = day + 30;
+							Cookies.set('ib2c-' + post_id, newDate, { expires: expire, path: '' })
+						}
+					}
+
+					var dateValue = day + hour + min;
+					finalDate = newDate + dateValue;
+				}
+
+				// update countdown
+				var expiryaction = ib2countdowns[cid]['expiryaction'],
+					end = expiryaction['end'],
+					url = expiryaction['url'] ? decodeURIComponent(expiryaction['url']) : '';
+
+				$('#' + cid).countdown(finalDate)
+					.on('update.countdown', function(event) {
+						time = {
+							days: event.offset.totalDays, 
+							hours: event.offset.hours, 
+							minutes: event.offset.minutes, 
+							seconds: event.offset.seconds
+						};
+						
+						countdownUpdate(cid, time, updateType);
+					})
+					.on('finish.countdown', function(event) {
+						if ( end == 'redirect' && url !== '' ) {
+							window.location.href = url;
+						} else if ( end == 'hide' ) {
+							$('#' + cid).hide();
+						} else if ( end == 'reveal' && hidden ) {
+							$('#' + cid).html(hidden);
+							$('#' + cid + '-content').show();
+						}
+					});
+	    	}
+    	});
+    }
+
+	// DELAY & ANIMATION
+	if ( $('.ib2-box-delay').length ) {
+		$('.ib2-box-delay').each(function(){
+			var b = $(this), id = b.attr('id'),
+			delay = parseInt(b.attr('data-delay')),
+			anim = b.attr('data-animation'),
+			options = {};
+			
+			var hold = delay * 1000;
+			
+			setTimeout(function(){
+				if ( anim == 'none' || typeof anim === "undefined" ) {
+					$('#' + id).removeClass('ib2-box-delay');
+				} else {
+					effectClass = animation_map(anim);
+					$('#' + id).removeClass('ib2-box-delay');
+					
+					$('#' + id).removeClass('ib2-box-animation')
+							.addClass('animated ' + effectClass);	
+				}
+			}, hold);
+		});
+	}
+
+	var animElement = window.document.documentElement,
+		scrolled = true,
+		animInterval,
+		boxes = document.querySelectorAll('.ib2-box-animation');
+
+	addEvent(document, 'DOMContentLoaded', function(){
+		$(window).on('resize', scrollHandler);
+		$(window).on('scroll', scrollHandler);
+
+	  	animInterval = setInterval(scrollCallback, 50);
+	});
+
+	// FUNCTIONS
+	function addEvent(obj, event, callback) {
+		if ( obj.addEventListener )
+			obj.addEventListener(event, callback, false);
+		else if ( obj.attachEvent )
+			obj.attachEvent("on" + event, callback);
+	}
+
+	function revealPopup(popupId) {
+		if ( !$('.ib2-popup-bg').length ) {
+			$('body').append('<div class="ib2-popup-bg"></div>');
+		}
+
+		// improve popup close button
+		if ( $('#' + popupId).find('.ib2-close-pop').find('img').length ) {
+			$('#' + popupId).find('.ib2-close-pop').html('<i class="fas fa-times"></i>');
+		}
+
+		currentPopupId = popupId;
+		if ( $('#' + popupId).hasClass('ib2-box-animation') ) {
+			var showPop,
+				stage = 0,
+				anim = $('#' + popupId).attr('data-animation');
+
+			showPop = setInterval(function(){
+				if ( stage ) {
+					$('.ib2-popup-bg').show();
+					$('#' + popupId).removeClass('ib2-box-animation')
+						.addClass('animated ' + animation_map(anim));
+					stage = 0;
+					clearInterval(showPop);
+				} else {
+					$('#' + popupId)
+						.css({
+							'display': 'block',
+						})
+
+					ib2_popup_center($('#' + popupId));
+					stage++;
+				}
+			}, 100);
+		} else {
+			$('.ib2-popup-bg').show();
+			$('#' + popupId).show();
+			ib2_popup_center($('#' + popupId));
+		}
+
+		// check if there's video
+		$('#' + popupId).find('.ib2-video-container').each(function(){
+			var $vid = $(this),
+				vid = $vid.attr('id');
+
+			if ( videos && videos.hasOwnProperty(vid) ) {
+				$vid.find('.el-content').html(videos[vid]);
+			}
+		});
+	}
+
+	function revealSlider() {
+		$('#ib2-bottom-slider-main').addClass('slider-out');
+		$('#ib2-bottom-slider-main').css({
+			'top': 'auto',
+			'bottom': '0px',
+			'left': '0px'
+		}).show();
+
+		setTimeout(function(){
+			$('#ib2-bottom-slider-main').removeClass('slider-out').addClass('slider-in');
+			var sliderHeight = $('#ib2-bottom-slider-main').find('> div').outerHeight();
+			origPadBottom = parseInt($('body').css('paddingBottom').replace(/px/gi, ''));
+			$('body').css('paddingBottom', sliderHeight + 'px');
+			$('#ib2-bottom-slider-main').append('<a href="#" class="slider-bar-close"><i class="fas fa-times"></i></a>');
+		}, 1000);
+	}
+
+	function revealBar() {
+		$('.ib2-notification-bar').addClass('slider-out');
+		$('.ib2-notification-bar').show();
+
+		setTimeout(function(){
+			$('.ib2-notification-bar').removeClass('slider-out').addClass('slider-in');
+			var barHeight = $('body').find('.ib2-notification-bar > .ib2-notification-text').outerHeight();
+			origPadTop = parseInt($('body').css('paddingTop').replace(/px/gi, ''));
+			$('body').css('paddingTop', barHeight + 'px');
+			$('.ib2-notification-bar').append('<a href="#" class="slider-bar-close"><i class="fas fa-times"></i></a>');
+		}, 1000);
+	}
+
+  	function scrollHandler() {
+  		scrolled = true;
+  	}
+
+  	function scrollCallback() {
+	    if (scrolled) {
+	      	scrolled = false;
+	      	var results = [];
+	      	if ( boxes ) {
+		      	for ( var i = 0; i < boxes.length; i++ ) {
+		        	var $this = $(boxes[i]);
+
+		        	if ( $this.hasClass('animated') 
+		        		|| $this.hasClass('ib2-box-delay') 
+		        		|| $this.hasClass('ib2-popup')
+		        		|| $this.hasClass('ib2-slider-el')
+		        	) {
+		        		continue;
+		        	}
+
+		          	if ( boxVisible($this) ) {
+		            	var anim = $this.data('animation');
+		            	$this.removeClass('ib2-box-animation')
+							.addClass('animated ' + anim);
+		            	continue;
+		          	}
+		          	results.push(boxes[i]);
+		        }
+		    }
+
+      		boxes = results;
+      		if ( !boxes.length ) {
+        		stopAnim();
+      		}
+    	}
+  	}
+
+  	function stopAnim() {
+  		$(window).off('resize', scrollHandler);
+		$(window).off('scroll', scrollHandler);
+	    if (animInterval != null) {
+			clearInterval(animInterval);
+	    }
+  	}
+
+  	function boxVisible(elem) {
+  		var viewTop = window.pageYOffset,
+			viewBottom;
+
+		viewBottom = viewTop + Math.min(animElement.clientHeight, getInnerHeight()) - 20;
+		var top = offsetTop(elem.get(0));
+		var bottom = top + elem.outerHeight();
+
+		return top <= viewBottom && bottom >= viewTop;
+  	}
+
+  	function offsetTop(element) {
+	    while ( element.offsetTop === undefined ) {
+	      	element = element.parentNode;
+	    }
+    	var top = element.offsetTop;
+    	while (element.offsetParent) {
+      		element = element.offsetParent;
+      		top += element.offsetTop;
+    	}
+    	return top;
+  	}
+
+  	function shouldDisplay(type, data, post_id) {
+		var display = false,
+			cookieName = '__ib2_' + type + '_' + post_id;
+
+		if ( data.active == 'yes' ) {
+			if ( data.time == 'pageload' ) {
+				display = true;
+			} else if ( data.time != 'pageload' && data.time != 'unfocus' ) {
+				var displayCookie = Cookies.get(cookieName);
+				if ( typeof displayCookie === "undefined" ) {
+					display = true;
+				}
+
+				if ( !display && displayCookie && (displayCookie != data.time) ) {
+					display = true;
+				}
+
+				if ( display ) {
+					var expireDays = getExpire(data.time);
+					Cookies.set(cookieName, data.time, { expires: expireDays });
+				}
+			}
+		} 
+		return display;
+	}
+
+	function close_popup(element) {
+		$('.ib2-popup-bg').hide();
+		element.hide();
+		element.find('.ib2-video-container').each(function(){
+			var $vid = $(this);
+
+			$vid.find('.el-content').html('');
+		});
+		currentPopupId = null;
+	}
+
+	function ib2_popup_center(element) {
+		var pos  = 'fixed';
+		var top  = (($(window).height() / 2) - (element.outerHeight() / 2));
+		var left = (($(window).width() / 2) - (element.outerWidth() / 2));
+
+		if ( top < 0 ) top = 0;
+		if ( left < 0 ) left = 0;
+	
+		// IE6 fix
+		if ( $.browser.msie && parseInt($.browser.version) <= 6 ) {
+			top = top + $(window).scrollTop();
+			pos = 'absolute';
+		}
+
+		if ( top < 20 ) top = top + 30;
+		if ( top > 100 ) top = top - 50;
+		
+		element.css({
+	    	'position' : pos,
+	    	'top' : top,
+	    	'left' : left
+		});
+	}
+
+	function getExpire(time) {
+		var days = 0;
+		switch (time) {
+			case 'firsttime':
+				days = 365;
+				break;
+			case 'daily':
+				days = 1;
+				break;
+			case 'monthly':
+				days = 30;
+				break;
+			case 'weekly':
+				days = 7;
+				break;
+		}
+		return days;
+	}
+
+	function getInnerHeight() {
+  		if ('innerHeight' in window) {
+    		return window.innerHeight;
+  		}
+  		return document.documentElement.clientHeight;
+	}
+
+	function resizeBackgrounds() {
+		var selectors = document.querySelectorAll('.is-background');
+		if ( selectors ) {
+			selectors.forEach(function(selector){
+				var $this = $(selector),
+					type = $this.parent().find('.el-content-inner').length ? 'wsection' : 'other',
+					css = {
+						maxWidth: '100%',
+						width: '100%',
+						height: $this.parent().css('height'),
+					};
+
+				$this.css(css);
+			});
+		}
+	}
+
+	function getStyles(el, excludes) {
+		excludes = excludes || [];
+		if ( el === null || el === false || typeof el === "undefined" ) {
+			return null;
+		}
+
+		var styles = {},
+   			elementStyle = ( el.style ? el.style : null );
+
+   		if ( elementStyle ) {
+   			for ( var prop in elementStyle ) {
+   				if ( elementStyle.hasOwnProperty(prop) &&
+   					typeof elementStyle[prop] !== "undefined" && 
+   					elementStyle[prop] !== '' && 
+   					elementStyle[prop] !== null &&
+   					!$.isNumeric(prop) && 
+   					$.inArray(prop, excludes) < 0 ) {
+ 
+   					styles[prop] = elementStyle[prop];
+   				}
+   			}
+   		}
+   		return ( elementStyle ? styles : null );
+	}
+
+	function animation_map( effect ) {
+    	switch ( effect ) {
+    		case 'blind':
+    			effect = 'fadeInDown';
+    			break;
+    		case 'clip':
+    			effect = 'fadeInUp';
+    			break;
+    		case 'pulsate':
+    			effect = 'flash';
+    			break;
+    		case 'drop':
+    			effect = 'bounceInDown';
+    			break;
+    		case 'slide':
+    			effect = 'fadeInLeft';
+    			break;
+    		case 'scale':
+    			effect = 'zoomIn';
+    			break;
+    		case 'explode':
+    			effect = 'rubberBand';
+    			break;
+    		case 'highlight':
+    			effect = 'lightSpeedIn';
+    			break;
+    		case 'puff':
+    			effect = 'tada';
+    			break;
+    		case 'fold':
+    			effect = 'flip';
+    			break;
+    	}
+    	return effect;
+    }
+
+    function countdownHtml(id, type) {
+    	type = type || 'normal';
+
+    	var html = '';
+    	if ( type == 'circular' ) {
+    		html += '<div class="clock row">\
+					<div class="clock-item clock-days col-sm-6 col-md-3">\
+						<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet">\
+							<circle cx="60" cy="60" r="54" stroke-width="12" stroke="#e6e6e6" fill="none"></circle>\
+  							<circle cx="60" cy="60" r="54" stroke-width="12" class="clock-anim" stroke="#E16464" fill="none" />\
+						</svg>\
+						<span class="ib2-digit"><span id="' + id + '-tdays">0</span><span class="ib2-digit-txt"> day </span></span>\
+					</div>\
+					<div class="clock-item clock-hours col-sm-6 col-md-3">\
+						<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet">\
+							<circle cx="60" cy="60" r="54" stroke-width="12" stroke="#e6e6e6" fill="none"></circle>\
+  							<circle cx="60" cy="60" r="54" stroke-width="12" class="clock-anim" stroke="#7995D5" fill="none" />\
+						</svg>\
+						<span class="ib2-digit"><span id="' + id + '-thours">0</span><span class="ib2-digit-txt"> hour </span></span>\
+					</div>\
+					<div class="clock-item clock-minutes col-sm-6 col-md-3">\
+						<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet">\
+							<circle cx="60" cy="60" r="54" stroke-width="12" stroke="#e6e6e6" fill="none"></circle>\
+  							<circle cx="60" cy="60" r="54" stroke-width="12" class="clock-anim" stroke="#6fdb6f" fill="none" />\
+						</svg>\
+						<span class="ib2-digit"><span id="' + id + '-tminutes">0</span><span class="ib2-digit-txt"> minute </span></span>\
+					</div>\
+					<div class="clock-item clock-seconds col-sm-6 col-md-3">\
+						<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet">\
+							<circle cx="60" cy="60" r="54" stroke-width="12" stroke="#e6e6e6" fill="none"></circle>\
+  							<circle cx="60" cy="60" r="54" stroke-width="12" class="clock-anim" stroke="#E7B708" fill="none" />\
+						</svg>\
+						<span class="ib2-digit"><span id="' + id + '-tseconds">0</span><span class="ib2-digit-txt"> second </span></span>\
+					</div>\
+				</div>';
+    	} else {
+    		html += '<span class="ib2-digit"><span id="' + id + '-tdays">0</span><span class="ib2-digit-txt"> day </span></span>\
+				<span class="ib2-digit"><span id="' + id + '-thours">0</span><span class="ib2-digit-txt"> hour </span></span>\
+				<span class="ib2-digit"><span id="' + id + '-tminutes">0</span><span class="ib2-digit-txt"> minute </span></span>\
+				<span class="ib2-digit"><span id="' + id + '-tseconds">0</span><span class="ib2-digit-txt"> second </span></span>';
+    	}
+    	return html;	
+    }
+
+    function countdownUpdate(id, time, type) {
+		var defaultTime = {
+			days: 0,
+			hours: 0,
+			minutes: 0,
+			seconds: 0
+		};
+
+		time = Object.assign({}, defaultTime, time);
+		if ( $('#' + id + '-tseconds').length ) {
+			$('#' + id + '-tseconds').text(time.seconds);
+			$('#' + id + '-tminutes').text(time.minutes);
+			$('#' + id + '-thours').text(time.hours);
+			$('#' + id + '-tdays').text(time.days);
+			
+			if ( time.seconds > 1 )
+				$('#' + id + '-tseconds').next('.ib2-digit-txt').text(' seconds ');
+			else
+				$('#' + id + '-tseconds').next('.ib2-digit-txt').text(' second ');
+				
+			if ( time.minutes > 1 )
+				$('#' + id + '-tminutes').next('.ib2-digit-txt').text(' minutes ');
+			else
+				$('#' + id + '-tminutes').next('.ib2-digit-txt').text(' minute ');
+				
+			if ( time.hours > 1 )
+				$('#' + id + '-thours').next('.ib2-digit-txt').text(' hours ');
+			else
+				$('#' + id + '-thours').next('.ib2-digit-txt').text(' hour ');
+				
+			if ( time.days > 1 )
+				$('#' + id + '-tdays').next('.ib2-digit-txt').text(' days ');
+			else
+				$('#' + id + '-tdays').next('.ib2-digit-txt').text(' day ');
+		}
+
+		if ( type == 'circular' ) {
+			$('#' + id).find('.clock-days').find('.clock-anim').css('stroke-dashoffset', getDashArray(time.days, 365)); // days
+			$('#' + id).find('.clock-hours').find('.clock-anim').css('stroke-dashoffset', getDashArray(time.hours, 24)); // days
+			$('#' + id).find('.clock-minutes').find('.clock-anim').css('stroke-dashoffset', getDashArray(time.minutes, 60)); // days
+			$('#' + id).find('.clock-seconds').find('.clock-anim').css('stroke-dashoffset', getDashArray(time.seconds, 60)); // days
+		}
+	}
+
+	function getDashArray(num, max) {
+		var radius = 54,
+			circumference = 2 * Math.PI * radius,
+			dashoffset = circumference - ( (max-num) * (circumference/max) );
+
+		return dashoffset;
+	}
+})(jQuery);

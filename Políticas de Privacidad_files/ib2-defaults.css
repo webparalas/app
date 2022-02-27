@@ -1,0 +1,48 @@
+.ib2-popup-bg {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1022;
+  background-color: #000;
+  width: 100%;
+  height: 100%;
+  opacity: 0.6;
+}
+.ib2-box-delay {
+  display: none;
+}
+.ib2-box-animation {
+  visibility: hidden;
+}
+.slider-in, .slider-out {
+  max-height: 0;
+  -webkit-transition: max-height 0.5s ease-in-out;
+  -moz-transition: max-height 0.5s ease-in-out;
+  -o-transition: max-height 0.5s ease-in-out;
+  transition: max-height 0.5s ease-in-out;
+}
+.slider-in {
+  max-height: 300px;
+}
+.ib2-notification-bar {
+  display: none;
+}
+.slider-bar-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1024;
+  display: block;
+  color: rgba(0,0,0, 0.3) !important;
+}
+.slider-bar-close:hover {
+  color: rgba(0,0,0, 0.5) !important;
+}
+.ib2-attrib {
+  position: fixed;
+  bottom: 0px;
+  right: 0px;
+  z-index: 90;
+  display: block;
+}
